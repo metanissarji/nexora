@@ -716,6 +716,7 @@ footer h4{margin:0 0 14px;font-size:14px;letter-spacing:.12em;text-transform:upp
               שליחת הפרטים
             </button>
             <p class="msg" id="contactMsg" style="text-align:center">צריך טלפון או אימייל אחד לפחות כדי שנוכל לחזור אליכם</p>
+            <p class="msg" id="sendErr" role="alert" style="text-align:center">אופס, השליחה לא הצליחה. נסו שוב בעוד רגע, או כתבו לנו ישירות ל‑nexora131415@gmail.com</p>
             <p class="form-alt">מעדיפים ישירות? <a href="https://wa.me/972523674478" target="_blank" rel="noopener">וואטסאפ</a> · <a href="tel:+972523674478">052-367-4478</a> · <a href="mailto:nexora131415@gmail.com">nexora131415@gmail.com</a></p>
             <p class="form-note">הפרטים נשלחים אלינו בלבד ומשמשים ליצירת קשר בנוגע לפנייה שלכם.</p>
           </div>
@@ -787,9 +788,8 @@ footer h4{margin:0 0 14px;font-size:14px;letter-spacing:.12em;text-transform:upp
   const CFG = {
     phoneIntl: "972523674478",              // וואטסאפ / טלפון
     email: "nexora131415@gmail.com",
-    // אופציונלי: אם תפתחו טופס ב-Formspree (formspree.io) הדביקו כאן את ה-endpoint
-    // והפניות יגיעו ישירות למייל בלי לפתוח וואטסאפ. למשל: "https://formspree.io/f/xxxxxxx"
-    formEndpoint: ""
+    // הפניות מהטופס נשלחות אוטומטית למייל הזה דרך FormSubmit (formsubmit.co)
+    formEndpoint: "https://formsubmit.co/ajax/nexora131415@gmail.com"
   };
 
   const $  = (s,c)=> (c||document).querySelector(s);
@@ -841,23 +841,14 @@ footer h4{margin:0 0 14px;font-size:14px;letter-spacing:.12em;text-transform:upp
   const form   = $("#leadForm"),
         body   = $("#formBody"),
         sent   = $("#sentBox"),
-        cMsg   = $("#contactMsg");
+        cMsg   = $("#contactMsg"),
+        sErr   = $("#sendErr");
 
   const setErr = (id, on) => { const f = $("#"+id); if(f) f.classList.toggle("err", !!on); };
 
   const normalizePhone = v => (v||"").replace(/[^\d+]/g,"");
   const validPhone = v => { const d = normalizePhone(v).replace(/\D/g,""); return d.length >= 9 && d.length <= 15; };
   const validEmail = v => /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test((v||"").trim());
-
-  const buildMessage = d =>
-    "פנייה חדשה מהאתר של Nexora\n" +
-    "————————————\n" +
-    "שם: " + d.name + "\n" +
-    (d.phone ? "טלפון: " + d.phone + "\n" : "") +
-    (d.email ? "אימייל: " + d.email + "\n" : "") +
-    "מתעניין/ת ב: " + d.topic + "\n" +
-    (d.message ? "הודעה: " + d.message + "\n" : "") +
-    "————————————";
 
   const showSent = () => { body.style.display = "none"; sent.classList.add("on"); sent.scrollIntoView({behavior:"smooth", block:"center"}); };
 
@@ -867,6 +858,7 @@ footer h4{margin:0 0 14px;font-size:14px;letter-spacing:.12em;text-transform:upp
     body.style.display = "";
     $$(".field").forEach(f => f.classList.remove("err"));
     cMsg.style.display = "none";
+    sErr.style.display = "none";
     body.scrollIntoView({behavior:"smooth", block:"center"});
   });
 
@@ -905,26 +897,37 @@ footer h4{margin:0 0 14px;font-size:14px;letter-spacing:.12em;text-transform:upp
     const original = btn.innerHTML;
     btn.innerHTML = "שולח…";
 
-    const text = buildMessage(d);
+    sErr.style.display = "none";
 
-    // 1) אם הוגדר endpoint — שולחים ישירות למייל
-    if(CFG.formEndpoint){
-      try{
-        const res = await fetch(CFG.formEndpoint, {
-          method:"POST",
-          headers:{"Accept":"application/json","Content-Type":"application/json"},
-          body: JSON.stringify(Object.assign({}, d, {_subject:"פנייה חדשה מהאתר — " + d.name}))
-        });
-        if(res.ok){ showSent(); btn.disabled = false; btn.innerHTML = original; return; }
-      }catch(err){ /* נמשיך לפתרון הוואטסאפ */ }
-    }
+    // שליחה אוטומטית למייל של Nexora. "השב" במייל יענה ישירות לפונה.
+    const payload = {
+      "שם": d.name,
+      "טלפון": d.phone || "—",
+      "אימייל": d.email || "—",
+      "מתעניין/ת ב": d.topic,
+      "הודעה": d.message || "—",
+      _subject: "פנייה חדשה מהאתר — " + d.name,
+      _template: "table",
+      _captcha: "false"
+    };
+    if(d.email) payload._replyto = d.email;
 
-    // 2) ברירת מחדל: פתיחת וואטסאפ עם כל הפרטים
-    window.open("https://wa.me/" + CFG.phoneIntl + "?text=" + encodeURIComponent(text), "_blank", "noopener");
+    let ok = false;
+    try{
+      const res = await fetch(CFG.formEndpoint, {
+        method:"POST",
+        headers:{"Accept":"application/json","Content-Type":"application/json"},
+        body: JSON.stringify(payload)
+      });
+      const out = await res.json().catch(() => ({}));
+      ok = res.ok && String(out.success) === "true";
+    }catch(err){ ok = false; }
 
     btn.disabled = false;
     btn.innerHTML = original;
-    showSent();
+
+    if(ok){ showSent(); }
+    else { sErr.style.display = "block"; }
   });
 })();
 </script>
