@@ -912,16 +912,23 @@ footer h4{margin:0 0 14px;font-size:14px;letter-spacing:.12em;text-transform:upp
     };
     if(d.email) payload._replyto = d.email;
 
+    // לא נותנים לכפתור "להיתקע": הודעת המתנה אחרי 5 שניות, ויתור אחרי 30
+    const ctrl = new AbortController();
+    const slowT  = setTimeout(() => { btn.innerHTML = "עוד רגע, שולח…"; }, 5000);
+    const abortT = setTimeout(() => ctrl.abort(), 30000);
+
     let ok = false;
     try{
       const res = await fetch(CFG.formEndpoint, {
         method:"POST",
         headers:{"Accept":"application/json","Content-Type":"application/json"},
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: ctrl.signal
       });
       const out = await res.json().catch(() => ({}));
       ok = res.ok && String(out.success) === "true";
     }catch(err){ ok = false; }
+    clearTimeout(slowT); clearTimeout(abortT);
 
     btn.disabled = false;
     btn.innerHTML = original;
