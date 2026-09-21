@@ -788,7 +788,10 @@ footer h4{margin:0 0 14px;font-size:14px;letter-spacing:.12em;text-transform:upp
   const CFG = {
     phoneIntl: "972523674478",              // וואטסאפ / טלפון
     email: "nexora131415@gmail.com",
-    // הפניות מהטופס נשלחות אוטומטית למייל הזה דרך FormSubmit (formsubmit.co)
+    // הפניות מהטופס נשלחות אוטומטית למייל של Nexora דרך Web3Forms (web3forms.com).
+    // המפתח הזה ציבורי מטבעו (לא סיסמה) — הוא רק אומר ל-Web3Forms לאיזה מייל לשלוח.
+    web3formsKey: "33c4fab5-7044-4709-ac2c-93d211b2c936",
+    // גיבוי: אם אין מפתח Web3Forms, שולחים דרך FormSubmit
     formEndpoint: "https://formsubmit.co/ajax/nexora131415@gmail.com"
   };
 
@@ -912,20 +915,49 @@ footer h4{margin:0 0 14px;font-size:14px;letter-spacing:.12em;text-transform:upp
     };
     if(d.email) payload._replyto = d.email;
 
-    // FormSubmit מקבל את הפנייה מיד אבל לפעמים מאשר רק אחרי 30+ שניות.
-    // לכן: כישלון מפורש / שגיאת רשת => הודעת שגיאה; אין תשובה אחרי 8 שניות => הצלחה.
-    // keepalive משאיר את הבקשה חיה גם אם הגולש סוגר את הדף.
-    const req = fetch(CFG.formEndpoint, {
-      method:"POST",
-      headers:{"Accept":"application/json","Content-Type":"application/json"},
-      body: JSON.stringify(payload),
-      keepalive: true
-    })
-      .then(res => res.json().then(out => res.ok && String(out.success) === "true", () => res.ok))
-      .catch(() => false);
-    const waited = new Promise(r => setTimeout(() => r("pending"), 8000));
-    const result = await Promise.race([req, waited]);
-    const ok = result === true || result === "pending";
+    let ok = false;
+    if(CFG.web3formsKey){
+      // Web3Forms עונה תוך שנייה-שתיים, אז מחכים לתשובה אמיתית (עם תקרה של 20 שניות)
+      const w3 = {
+        access_key: CFG.web3formsKey,
+        subject: payload._subject,
+        from_name: "Nexora — אתר",
+        "שם": payload["שם"],
+        "טלפון": payload["טלפון"],
+        "אימייל": payload["אימייל"],
+        "מתעניין/ת ב": payload["מתעניין/ת ב"],
+        "הודעה": payload["הודעה"],
+        botcheck: ""
+      };
+      if(d.email) w3.replyto = d.email;
+      const ctrl = new AbortController();
+      const abortT = setTimeout(() => ctrl.abort(), 20000);
+      try{
+        const res = await fetch("https://api.web3forms.com/submit", {
+          method:"POST",
+          headers:{"Accept":"application/json","Content-Type":"application/json"},
+          body: JSON.stringify(w3),
+          signal: ctrl.signal
+        });
+        const out = await res.json().catch(() => ({}));
+        ok = res.ok && out.success === true;
+      }catch(err){ ok = false; }
+      clearTimeout(abortT);
+    } else {
+      // FormSubmit מקבל את הפנייה מיד אבל לפעמים מאשר רק אחרי 30+ שניות.
+      // כישלון מפורש / שגיאת רשת => שגיאה; אין תשובה אחרי 8 שניות => הצלחה.
+      const req = fetch(CFG.formEndpoint, {
+        method:"POST",
+        headers:{"Accept":"application/json","Content-Type":"application/json"},
+        body: JSON.stringify(payload),
+        keepalive: true
+      })
+        .then(res => res.json().then(out => res.ok && String(out.success) === "true", () => res.ok))
+        .catch(() => false);
+      const waited = new Promise(r => setTimeout(() => r("pending"), 8000));
+      const result = await Promise.race([req, waited]);
+      ok = result === true || result === "pending";
+    }
 
     btn.disabled = false;
     btn.innerHTML = original;
